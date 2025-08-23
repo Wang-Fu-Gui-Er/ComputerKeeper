@@ -20,7 +20,8 @@
 5. 通过模拟 `鼠标移动`、`滚轮滑动`、`Shift按下&松开`三种方式随机使用来激活电脑
 
 # 前置工作
-**克隆本项目**：`git clone https://github.com/GalokPeng/ComputerKeeper.git`
+**克隆本项目**
+- `git clone https://github.com/GalokPeng/ComputerKeeper.git`
 
 **安装moudle**
 - `pip install PyQt5`
