@@ -1,4 +1,6 @@
-![截图](https://github.com/GalokPeng/ComputerKeeper/blob/main/icon.png)
+<div align="center">
+<img src="./icon.png" alt="icon"/>
+</div>
 # 这是一个基于Python PyQt5 开发的摸鱼工具
 
 企业微信、钉钉、飞书等办公软件一直会检测电脑在线状态，电脑无操作后会直接显示离开状态，这就让我们很不安心的摸鱼了，于是需要一个工具来保证电脑一直被激活。
