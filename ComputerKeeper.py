@@ -359,9 +359,11 @@ class MouseMover(QtWidgets.QWidget):
             self.statusLabel.setText("状态：当天结束时间已到，未开始（请明天或重新设置后再开始）")
             return
 
-        # 进入运行
+        # 进入运行：时间窗内立即启动防休眠（不等空闲达标，防止系统先睡眠/锁屏）
         self.running = True
         self.active_mode = False
+        if IS_MAC and self._is_in_time_window_now():
+            enable_keep_awake()
 
         # UI 状态
         self.startButton.setEnabled(False)
@@ -477,6 +479,13 @@ class MouseMover(QtWidgets.QWidget):
         if not self.running:
             return
 
+        if IS_MAC:
+            # 时间窗内全程防休眠（含午休）：空闲达标前就阻止系统睡眠/锁屏
+            if self._is_in_time_window_now():
+                enable_keep_awake()
+            else:
+                disable_keep_awake()
+
         if self.no_day_selected and self._is_session_finished_for_no_day_selected():
             self.stop_moving()
             self.statusLabel.setText("状态：当天结束时间已到，已停止（请重新开始）")
@@ -485,7 +494,6 @@ class MouseMover(QtWidgets.QWidget):
         if not self._is_in_time_window_now():
             if self.active_mode:
                 self.active_mode = False
-                disable_keep_awake()
             self.statusLabel.setText(self._waiting_status_text())
             self._schedule_next()
             return
@@ -493,7 +501,6 @@ class MouseMover(QtWidgets.QWidget):
         if self._is_in_lunch_break_now():
             if self.active_mode:
                 self.active_mode = False
-                disable_keep_awake()
             self.statusLabel.setText("状态：午休中（暂停执行）")
             self._schedule_next()
             return
@@ -576,7 +583,6 @@ class MouseMover(QtWidgets.QWidget):
         self.last_user_input_ts = time.monotonic()
         if self.running and self.active_mode:
             self.active_mode = False
-            disable_keep_awake()
             self.statusLabel.setText("状态：用户活动，已暂停（等待再次空闲）")
             self.timer.stop()
             self.timer.start(5000)
