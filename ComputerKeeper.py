@@ -285,6 +285,9 @@ class MouseMover(QtWidgets.QWidget):
 
         self._tray_tip_shown = False
 
+        # macOS：点 Dock 图标 / Cmd+Tab 切回时恢复窗口（关闭只是隐藏到托盘，非退出）
+        QtWidgets.QApplication.instance().installEventFilter(self)
+
     # ------------------ UI 控制 ------------------
     def start_moving(self):
         text = self.intervalLineEdit.text().strip()
@@ -614,6 +617,14 @@ class MouseMover(QtWidgets.QWidget):
                 self.hide()
             else:
                 self.show()
+
+    def eventFilter(self, obj, event):
+        if IS_MAC and event.type() == QtCore.QEvent.ApplicationActivate:
+            if self.isHidden():
+                self.show()
+                self.raise_()
+                self.activateWindow()
+        return super(MouseMover, self).eventFilter(obj, event)
 
     def show_window(self):
         self.show()
