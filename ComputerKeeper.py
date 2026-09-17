@@ -118,23 +118,45 @@ def disable_keep_awake():
 
 
 def poke_once_mac():
-    # macOS 原生模拟输入：用 CGEvent 发布合成鼠标移动事件（等价于 Windows mouse_event）。
+    # macOS 原生模拟输入：随机 鼠标移动(50%) / 滚轮(30%) / Shift(20%)，与 Windows 版行为一致。
     # 合成事件会被系统计为有效活动，从而刷新空闲计时，保持在线状态。
     cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
     cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
     cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_double * 2, ctypes.c_uint32]
+    cg.CGEventCreateScrollWheelEvent.restype = ctypes.c_void_p
+    cg.CGEventCreateScrollWheelEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32, ctypes.c_int32, ctypes.c_int32]
+    cg.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+    cg.CGEventCreateKeyboardEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_bool]
+    cg.CGEventSetFlags.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
     cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
     cg.CFRelease.argtypes = [ctypes.c_void_p]
 
-    pos = QtGui.QCursor.pos()  # 真实光标位置（GUI 进程内可用）
-    x, y = pos.x(), pos.y()
-    # kCGHIDEventTap = 0, kCGEventMouseMoved = 5, kCGMouseButtonLeft = 0
-    for nx, ny in ((x + 1, y + 1), (x, y)):
-        pt = (ctypes.c_double * 2)(nx, ny)
-        ev = cg.CGEventCreateMouseEvent(None, 5, pt, 0)
+    def post(ev):
         if ev:
             cg.CGEventPost(0, ev)
             cg.CFRelease(ev)
+
+    r = random.random()
+    if r < 0.5:
+        # 鼠标移动：+1 再回原位（kCGEventMouseMoved=5）
+        pos = QtGui.QCursor.pos()  # 真实光标位置（GUI 进程内可用）
+        x, y = pos.x(), pos.y()
+        for nx, ny in ((x + 1, y + 1), (x, y)):
+            pt = (ctypes.c_double * 2)(nx, ny)
+            post(cg.CGEventCreateMouseEvent(None, 5, pt, 0))
+    elif r < 0.8:
+        # 滚轮：下 1 格再上 1 格（kCGScrollEventUnitLine=0）
+        for d in (1, -1):
+            post(cg.CGEventCreateScrollWheelEvent(None, 0, 1, d, 0, 0))
+    else:
+        # Shift：按下（带修饰标志）再松开（kVK_Shift=56, kCGEventFlagMaskShift=0x20000）
+        down = cg.CGEventCreateKeyboardEvent(None, 56, True)
+        up = cg.CGEventCreateKeyboardEvent(None, 56, False)
+        cg.CGEventSetFlags(down, 0x20000)
+        post(down)
+        time.sleep(0.1)
+        cg.CGEventSetFlags(up, 0)
+        post(up)
 
 
 atexit.register(disable_keep_awake)
@@ -254,6 +276,8 @@ class MouseMover(QtWidgets.QWidget):
         # 运行状态
         self.running = False
         self.active_mode = False
+        self.last_poke_ts = 0.0        # macOS：上次合成微动的时间（区分真实输入用）
+        self._next_poke_at = 0.0       # macOS：下次允许微动的时刻（随机间隔）
         self.interval_seconds = 30
         self.start_time = self.startTimeEdit.time()
         self.end_time = self.endTimeEdit.time()
@@ -441,9 +465,12 @@ class MouseMover(QtWidgets.QWidget):
         elif not self.active_mode:
             delay_ms = 1000
         else:
-            base = max(self.interval_seconds, 3)
-            factor = random.uniform(0.7, 1.3)
-            delay_ms = int(base * factor * 1000)
+            if IS_MAC:
+                delay_ms = 1000  # macOS：每秒检查活动，到点才微动
+            else:
+                base = max(self.interval_seconds, 3)
+                factor = random.uniform(0.7, 1.3)
+                delay_ms = int(base * factor * 1000)
         self.timer.start(delay_ms)
 
     def _on_timer(self):
@@ -482,10 +509,15 @@ class MouseMover(QtWidgets.QWidget):
                 left = max(0, self.idle_minutes_threshold * 60 - int(idle_secs))
                 self.statusLabel.setText(f"状态：待机（在时间窗内，距空闲触发还需约 {left} 秒）")
         else:
-            if IS_MAC and self._get_idle_seconds() < self.idle_minutes_threshold * 60:
-                self.active_mode = False
-                disable_keep_awake()
-                self.statusLabel.setText("状态：用户活动，已暂停（等待再次空闲）")
+            if IS_MAC:
+                now = time.monotonic()
+                # 自己的合成事件也会清零空闲计时，需与真实输入区分：
+                # 距上次微动已超 5 秒时空闲仍 < 5 秒，说明是真实用户活动
+                if self._get_idle_seconds() < 5 and now - self.last_poke_ts > 5:
+                    self._on_user_activity()
+                    return
+                if now >= self._next_poke_at:
+                    self._poke_once()
             else:
                 self._poke_once()
 
@@ -526,6 +558,8 @@ class MouseMover(QtWidgets.QWidget):
             pos = QtGui.QCursor.pos()
             QtGui.QCursor.setPos(pos.x() + 1, pos.y() + 1)
             QtGui.QCursor.setPos(pos)
+        self.last_poke_ts = time.monotonic()
+        self._next_poke_at = self.last_poke_ts + max(self.interval_seconds, 3) * random.uniform(0.7, 1.3)
 
     # ------------------ 空闲检测 ------------------
     def _get_idle_seconds(self):
