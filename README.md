@@ -48,7 +48,7 @@
 **克隆本项目**
 
 ```bash
-git clone https://github.com/<你的用户名>/ComputerKeeper.git
+git clone https://github.com/Wang-Fu-Gui-Er/ComputerKeeper.git
 cd ComputerKeeper
 ```
 
