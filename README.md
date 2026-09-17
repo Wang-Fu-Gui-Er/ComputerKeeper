@@ -25,8 +25,8 @@ cd ComputerKeeper
 # 安装依赖（macOS 自带 Python 3.9 即可）
 /usr/bin/python3 -m pip install --user PyQt5 pyinstaller
 
-# 打包（icon.icns 已内置，无需生成）
-PYTHONNOUSERSITE=0 pyinstaller -F -w --clean --noconfirm \
+# 打包（icon.icns 已内置；onedir 模式单进程，macOS 下 -F 单文件模式会是双进程）
+PYTHONNOUSERSITE=0 pyinstaller -w --clean --noconfirm \
   --name ComputerKeeper --icon=icon.icns \
   --add-data "icon.png:." ComputerKeeper.py
 
