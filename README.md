@@ -65,9 +65,12 @@ cd ComputerKeeper
 
 ## macOS 使用说明
 
-### 一、生成应用图标（可选，一次性）
+### 一、应用图标
 
-仓库自带的 `icon.png` 实际是 JPEG 格式（原项目历史遗留），需要先转成真正的 PNG 再生成 `.icns`：
+仓库已内置 `icon.icns`（macOS 应用图标），打包时直接使用，**无需自己生成**。
+
+> 仅当你更换了图标素材、需要重新生成 `icon.icns` 时才执行下面步骤。
+> 注意：仓库自带的 `icon.png` 实际是 JPEG 格式（原项目历史遗留），需先转成真正的 PNG 再生成：
 
 ```bash
 sips -s format png icon.png --out icon_real.png

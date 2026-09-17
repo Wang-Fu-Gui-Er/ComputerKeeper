@@ -10,7 +10,6 @@ __pycache__/
 build/
 dist/
 *.spec
-icon.icns
 icon_real.png
 
 # 编辑器
