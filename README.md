@@ -34,6 +34,10 @@ PYTHONNOUSERSITE=0 pyinstaller -w --clean --noconfirm \
 open dist/ComputerKeeper.app
 ```
 
+不想自己打包？直接下载现成安装包（Apple Silicon）：
+
+- [Releases 下载 ComputerKeeper-macOS-arm64.zip](https://github.com/Wang-Fu-Gui-Er/ComputerKeeper/releases/download/v1.0.0/ComputerKeeper-macOS-arm64.zip)，解压后拖入「应用程序」即可
+
 > 提示：若报找不到 PyQt5/PyInstaller，一般是环境设置了 `PYTHONNOUSERSITE=1`，加 `PYTHONNOUSERSITE=0` 前缀即可。
 
 ## 使用
