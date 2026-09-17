@@ -12,6 +12,10 @@
 - 模拟鼠标移动刷新系统空闲计时（Windows 版还会随机使用滚轮、Shift 键）
 - macOS 增强：真实空闲检测、`caffeinate` 防休眠、原生合成输入
 
+## 截图
+
+![ComputerKeeper 界面](screenshot.png)
+
 ## 快速开始（macOS）
 
 ```bash
