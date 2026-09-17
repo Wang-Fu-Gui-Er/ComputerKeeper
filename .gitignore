@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller 构建产物
+build/
+dist/
+*.spec
+icon.icns
+icon_real.png
+
+# 编辑器
+.idea/
+.vscode/

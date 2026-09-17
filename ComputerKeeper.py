@@ -4,6 +4,8 @@ import time
 import random
 import ctypes
 import datetime
+import subprocess
+import atexit
 from ctypes import wintypes
 from PyQt5 import QtWidgets, QtCore, QtGui
 
@@ -13,6 +15,7 @@ def resource_path(relative_path: str) -> str:
     return os.path.join(base_path, relative_path)
 
 IS_WINDOWS = sys.platform.startswith("win")
+IS_MAC = sys.platform == "darwin"
 
 # Windows 常量与 API
 if IS_WINDOWS:
@@ -66,15 +69,75 @@ if IS_WINDOWS:
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
 
+mac_caffeinate_proc = None
+
+
+def get_idle_seconds_mac():
+    # macOS 原生空闲检测：CGEventSourceSecondsSinceLastEventType
+    # 等价于 Windows 的 GetLastInputInfo
+    try:
+        cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+        cg.CGEventSourceSecondsSinceLastEventType.restype = ctypes.c_double
+        cg.CGEventSourceSecondsSinceLastEventType.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+        # kCGEventSourceStateHidSystemState = 1, kCGAnyInputEventType = 0xFFFFFFFF
+        return cg.CGEventSourceSecondsSinceLastEventType(1, 0xFFFFFFFF)
+    except Exception:
+        return 999999.0
+
+
 def enable_keep_awake():
+    global mac_caffeinate_proc
     if IS_WINDOWS:
         kernel32.SetThreadExecutionState(
             ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
         )
+    elif IS_MAC:
+        # 等价于 SetThreadExecutionState：防止空闲休眠与显示器休眠
+        try:
+            if mac_caffeinate_proc is None or mac_caffeinate_proc.poll() is not None:
+                mac_caffeinate_proc = subprocess.Popen(
+                    ["caffeinate", "-i", "-d"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception:
+            mac_caffeinate_proc = None
+
 
 def disable_keep_awake():
+    global mac_caffeinate_proc
     if IS_WINDOWS:
         kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+    elif IS_MAC:
+        try:
+            if mac_caffeinate_proc is not None:
+                mac_caffeinate_proc.kill()
+        except Exception:
+            pass
+        mac_caffeinate_proc = None
+
+
+def poke_once_mac():
+    # macOS 原生模拟输入：用 CGEvent 发布合成鼠标移动事件（等价于 Windows mouse_event）。
+    # 合成事件会被系统计为有效活动，从而刷新空闲计时，保持在线状态。
+    cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+    cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+    cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_double * 2, ctypes.c_uint32]
+    cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+    cg.CFRelease.argtypes = [ctypes.c_void_p]
+
+    pos = QtGui.QCursor.pos()  # 真实光标位置（GUI 进程内可用）
+    x, y = pos.x(), pos.y()
+    # kCGHIDEventTap = 0, kCGEventMouseMoved = 5, kCGMouseButtonLeft = 0
+    for nx, ny in ((x + 1, y + 1), (x, y)):
+        pt = (ctypes.c_double * 2)(nx, ny)
+        ev = cg.CGEventCreateMouseEvent(None, 5, pt, 0)
+        if ev:
+            cg.CGEventPost(0, ev)
+            cg.CFRelease(ev)
+
+
+atexit.register(disable_keep_awake)
 
 def get_idle_seconds_win32():
     if not IS_WINDOWS:
@@ -93,7 +156,7 @@ class MouseMover(QtWidgets.QWidget):
 
         self.setWindowTitle("ComputerKeeper")
         self.setGeometry(100, 100, 520, 440)
-        self.setWindowOpacity(0.88)  # 半透明
+        self.setWindowOpacity(1.0)  # 不透明，避免叠窗时看不清文字
 
         # 设置窗口图标
         app_icon_path = resource_path("icon.png")
@@ -125,7 +188,7 @@ class MouseMover(QtWidgets.QWidget):
         self.endTimeEdit = QtWidgets.QTimeEdit(self)
         self.endTimeEdit.setGeometry(150, row_y - 4, 120, 28)
         self.endTimeEdit.setDisplayFormat("HH:mm")
-        self.endTimeEdit.setTime(QtCore.QTime(17, 55))
+        self.endTimeEdit.setTime(QtCore.QTime(17, 30))
 
         row_y += 40
         # 午休时间段
@@ -134,13 +197,13 @@ class MouseMover(QtWidgets.QWidget):
         self.lunchStartEdit = QtWidgets.QTimeEdit(self)
         self.lunchStartEdit.setGeometry(170, row_y - 4, 90, 28)
         self.lunchStartEdit.setDisplayFormat("HH:mm")
-        self.lunchStartEdit.setTime(QtCore.QTime(12, 0))
+        self.lunchStartEdit.setTime(QtCore.QTime(11, 30))
         self.lunchSepLabel = QtWidgets.QLabel('~', self)
         self.lunchSepLabel.setGeometry(265, row_y, 10, 24)
         self.lunchEndEdit = QtWidgets.QTimeEdit(self)
         self.lunchEndEdit.setGeometry(280, row_y - 4, 90, 28)
         self.lunchEndEdit.setDisplayFormat("HH:mm")
-        self.lunchEndEdit.setTime(QtCore.QTime(13, 30))
+        self.lunchEndEdit.setTime(QtCore.QTime(13, 15))
 
         row_y += 40
         # 一周 7 天选择（全不选=当天有效）
@@ -167,7 +230,7 @@ class MouseMover(QtWidgets.QWidget):
         self.idleMinutesSpin = QtWidgets.QSpinBox(self)
         self.idleMinutesSpin.setGeometry(150, row_y - 4, 120, 28)
         self.idleMinutesSpin.setRange(1, 240)
-        self.idleMinutesSpin.setValue(5)
+        self.idleMinutesSpin.setValue(3)
 
         row_y += 40
         self.startButton = QtWidgets.QPushButton('开始', self)
@@ -181,7 +244,7 @@ class MouseMover(QtWidgets.QWidget):
 
         row_y += 40
         self.statusLabel = QtWidgets.QLabel('状态：待机', self)
-        self.statusLabel.setGeometry(20, row_y, 480, 22)
+        self.statusLabel.setGeometry(20, row_y, 500, 22)
 
         # 定时器
         self.timer = QtCore.QTimer(self)
@@ -373,7 +436,7 @@ class MouseMover(QtWidgets.QWidget):
         elif self._is_in_lunch_break_now():
             delay_ms = 60000
         elif not self.active_mode:
-            delay_ms = 15000
+            delay_ms = 1000
         else:
             base = max(self.interval_seconds, 3)
             factor = random.uniform(0.7, 1.3)
@@ -416,7 +479,12 @@ class MouseMover(QtWidgets.QWidget):
                 left = max(0, self.idle_minutes_threshold * 60 - int(idle_secs))
                 self.statusLabel.setText(f"状态：待机（在时间窗内，距空闲触发还需约 {left} 秒）")
         else:
-            self._poke_once()
+            if IS_MAC and self._get_idle_seconds() < self.idle_minutes_threshold * 60:
+                self.active_mode = False
+                disable_keep_awake()
+                self.statusLabel.setText("状态：用户活动，已暂停（等待再次空闲）")
+            else:
+                self._poke_once()
 
         self._schedule_next()
 
@@ -445,6 +513,8 @@ class MouseMover(QtWidgets.QWidget):
                 else:
                     user32.keybd_event(VK_SHIFT, 0, 0, 0)
                     user32.keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0)
+            elif IS_MAC:
+                poke_once_mac()
             else:
                 pos = QtGui.QCursor.pos()
                 QtGui.QCursor.setPos(pos.x() + 1, pos.y() + 1)
@@ -460,6 +530,8 @@ class MouseMover(QtWidgets.QWidget):
             return max(0.0, time.monotonic() - self.last_user_input_ts)
         elif IS_WINDOWS:
             return get_idle_seconds_win32()
+        elif IS_MAC:
+            return get_idle_seconds_mac()
         else:
             return 999999.0
 
